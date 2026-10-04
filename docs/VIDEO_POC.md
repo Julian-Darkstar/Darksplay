@@ -28,7 +28,9 @@ gst-launch-1.0 -q filesrc location=build/video-poc/local.h264 \
 ```
 
 La muestra local contiene 90 AUD, 90 imágenes (3 IDR y 87 no-IDR), 3 SPS y 3 PPS.
-El patrón `ball` muestra movimiento sobre fondo negro. No contiene captura real.
+El patrón `ball` muestra movimiento sobre fondo negro. Fedora genera la imagen
+mediante `videotestsrc pattern=ball` y la transmite por USB; Android no genera la
+animación, únicamente recibe, decodifica y renderiza. No contiene captura real.
 
 | Configuración | Razón |
 | --- | --- |
@@ -66,6 +68,21 @@ su propio servidor de control estándar; esto no introduce un transporte IP de
 vídeo alternativo. El socket host está dentro de un directorio temporal privado.
 Al terminar se elimina únicamente el forwarding creado por ese proceso.
 
+V0.1-A.1 distingue tres resultados del sender, conservando el exit de GStreamer:
+
+| Resultado | Condición | Salida del script |
+| --- | --- | --- |
+| `completed` | GStreamer termina con 0 | 0 |
+| `transport_closed` | GStreamer termina por SIGPIPE **y** `recv(1, MSG_PEEK | MSG_DONTWAIT)` confirma EOF/reset en el socket remoto | 2 |
+| Fallo inesperado | Otro exit no cero, SIGPIPE con peer vivo, datos entrantes o cierre no confirmado | 1 |
+
+SIGPIPE no se ignora ni equivale por sí mismo a éxito. El chequeo Unix no bloquea,
+no consume datos y no necesita un canal de control. El diagnóstico no distingue
+Stop, salida de Activity, error del receiver o pérdida USB: informa cierre del
+extremo ADB/receiver y motivo exacto desconocido. La salida 2 es interrupción, no
+finalización normal. `finally` sigue recolectando GStreamer y retirando solo su
+forwarding; el socket y TemporaryDirectory se cierran también si se retorna 2.
+
 El wire stream es Annex B sin cabeceras Darksplay. `h264parse` produce AUD (NAL 9)
 antes de cada frame. El reader Android admite start codes de 3/4 bytes y fragmentos
 arbitrarios; agrupa NAL por AUD para entregar un AU a cada input buffer. Espera al
@@ -73,6 +90,10 @@ siguiente AUD (aproximadamente un frame de lookahead), o EOF para el último AU.
 Exige SPS/PPS en el primer AU y los pasa como `csd-0`/`csd-1`, con start codes,
 a `MediaFormat("video/avc", 1280, 720)`. No es un parser H.264 general ni el protocolo
 final: exige AUD y limita NAL/AU a 1 MiB; rechaza datos incompatibles explícitamente.
+En V0.1-A.1, al encontrar EOF se incorporan los ceros pendientes del NAL iniciado,
+comprobando antes el límite de payload acumulado más ceros. Sin un start code
+posterior no se descartan bytes ni se intenta interpretar el RBSP para distinguir
+padding de payload: es una conservación de bytes deliberada para este parser PoC.
 
 Los PTS de decoder se sintetizan como índice × 1 000 000 / 30 microsegundos;
 no representan timestamps sincronizados entre host y Android.
@@ -128,8 +149,12 @@ Los artefactos locales (logs y capturas) quedan en `build/video-poc`, fuera de G
 ## Prueba del parser sin frameworks
 
 `tests/AnnexBReaderCheck.java` ejecuta el Kotlin compilado sobre el H.264 local,
-con fragmentos de 1, 2, 3, 7, 64 y 4096 bytes; verifica 90 AU, SPS/PPS, start codes,
-EOF y rechazo de datos sin AUD o demasiado grandes. Tras `assembleDebug`, usando
+con fragmentos de 1, 2, 3, 4, 7, 64 y 4096 bytes. Además de los 90 AU reales,
+comprueba start codes de 3/4 bytes divididos entre lecturas, múltiples NAL/AU,
+EOF final y repetido, conservación byte a byte de ceros de payload al EOF,
+SPS/PPS exactos o ausentes, entradas cortas/truncadas sin acceso fuera de límites,
+NAL demasiado grande, AU demasiado grande con NAL individuales válidos, límite
+combinado payload+ceros al EOF y AU exactamente en MAX_BYTES. Tras `assembleDebug`, usando
 un JDK completo y su stdlib Kotlin de build ya descargada:
 
 ```sh
@@ -142,6 +167,17 @@ mkdir -p build/video-poc/parser-test
 ```
 
 Es un check específico de PoC, separado de CTest host y sin bibliotecas nuevas.
+`parameterSet()` no se cambió: estos checks usan las unidades del Kotlin real.
+
+Los seis checks stdlib del sender ejercitan sockets AF_UNIX reales (sin dispositivo):
+
+```sh
+python3 tests/test_video_poc.py
+```
+
+Cubren exit 0, SIGPIPE+EOF confirmado (salida 2), SIGPIPE con peer vivo o datos
+entrantes (fallo y peek no destructivo), error ordinario con peer cerrado y señal
+ajena a SIGPIPE. En entornos restringidos pueden requerir permisos para socketpair.
 
 ## Resultados y límites
 
@@ -175,8 +211,9 @@ No hay errores Darksplay/AndroidRuntime en los logs recogidos de las sesiones v�
 Una prueba inicial pulsó Start demasiado pronto tras reinstalar, y el sender recibió
 SIGPIPE; se repitió después de comprobar la pantalla lista.
 
-Al pulsar Stop o desconectar USB, GStreamer recibe SIGPIPE (`exit=-13`) y el script
-termina con código 1. En desconexión, intentar quitar el forwarding puede informar
+En el commit base V0.1-A, Stop o desconectar USB producían SIGPIPE (`exit=-13`) y
+el script lo clasificaba genéricamente como fallo, salida 1. V0.1-A.1 corrige esa
+clasificación según la comprobación de cierre descrita arriba. En desconexión, intentar quitar el forwarding puede informar
 `device not found`; ADB lo elimina al perder el transporte. La comprobación posterior
 mostró lista vacía. Esto es un diagnóstico de PoC, no reconexión sofisticada.
 La advertencia de XML SDK versión 4 persiste; Lint advierte versión Gradle más reciente
@@ -189,3 +226,32 @@ simultánea host/pantalla. Antes de V0.1-B deben revisarse ese método, la respu
 backpressure, el alcance del parser, configuración negociable y el control plane.
 No se implementan PipeWire, display virtual, escritorio extendido, audio, entrada,
 aceleración de encoder, Windows ni el protocolo Darksplay definitivo.
+
+## Validación de correcciones V0.1-A.1
+
+Sobre `25755f0`, sin cambios de encoding, Activity, receiver, manifiesto o permisos:
+
+| Check | Resultado |
+| --- | --- |
+| Sender, 6 checks AF_UNIX stdlib | Aprobados; SIGPIPE sin cierre confirmado sigue siendo fallo |
+| Parser Kotlin real | Todos los casos sintéticos ampliados y 90 AU GStreamer recién generados aprobados |
+| `parameterSet()` | SPS/PPS presentes, ausentes y entradas cortas aprobados; no requirió cambios |
+| Android `assembleDebug lint --offline --no-daemon` | BUILD SUCCESSFUL; Lint 0 errores, 2 advertencias existentes |
+| Host configure/build/CTest | Correctos; 1/1 test y host 0.0.1-dev, salida 0 |
+| A. Stream normal físico | 9,994 s, 300 frames renderizados, patrón visible; `completed`, salida 0; decoder liberado |
+| B. Stop durante stream | App abierta; decoder liberado, 527 frames renderizados; SIGPIPE+EOF confirmado, `transport_closed`, salida 2 |
+| C. Stop esperando host | Worker terminó en 61 ms; cero frames |
+| D. Desconexión USB física | Usuario confirmó Stream terminado; 438 frames renderizados, decoder liberado; sender `transport_closed`, salida 2 |
+| Reconexión | Mismo proceso app, Start habilitado, sin sesión automática ni forwarding residual |
+| Branding | SHA-256 idéntico al commit base |
+
+Logs y captura están en `build/video-poc/review`, excluido de Git. En desconexión,
+cleanup intentó retirar su forward e informó `device not found`; tras reconectar se
+confirmó lista vacía. No se ocultó ese diagnóstico. El primer intento del check Python
+fue bloqueado por el sandbox en `socketpair.sendall`; los seis checks pasaron al
+repetir fuera de esa restricción, sin introducir sockets IP ni dependencias.
+
+La corrección conserva los ceros finales y comprueba su límite combinado; no se
+hallaron otros bugs pequeños del parser ni se reescribió `parameterSet()`. Esta
+regresión física no vuelve a medir 60 s ni latencia extremo a extremo. Annex B+AUD
+sigue siendo framing experimental y no se implementa control plane V0.1-B.

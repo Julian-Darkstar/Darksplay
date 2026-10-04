@@ -19,6 +19,11 @@ internal class AnnexBReader(input: InputStream) {
             val byte = input.read()
             if (byte == -1) {
                 eof = true
+                // No following start code: retain pending bytes of the final NAL.
+                if (started) {
+                    require(payload.size() + zeros <= MAX_BYTES) { "NAL exceeds PoC limit" }
+                    repeat(zeros) { payload.write(0) }
+                }
                 return if (payload.size() == 0) null else PREFIX + payload.toByteArray()
             }
             if (byte == 0) {

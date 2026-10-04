@@ -13,6 +13,26 @@ ROOT = Path(__file__).resolve().parent.parent
 REMOTE = "localabstract:io.darkstar.darksplay.video"
 
 
+def classify_pipeline_exit(result, stream):
+    """SIGPIPE alone is not evidence of an expected receiver closure."""
+    if result == 0:
+        print("PoC outcome=completed; pipeline finished normally", flush=True)
+        return 0
+    if result == -signal.SIGPIPE:
+        try:
+            closed = stream.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT) == b""
+        except ConnectionResetError:
+            closed = True
+        except (BlockingIOError, OSError) as error:
+            closed = False
+            print(f"SIGPIPE peer-close check: {error}", flush=True)
+        if closed:
+            print("PoC outcome=transport_closed; receiver/ADB endpoint closed "
+                  "and GStreamer received SIGPIPE; exact reason unknown", flush=True)
+            return 2  # distinguish interruption from completion and pipeline failure
+    raise RuntimeError(f"unexpected GStreamer failure (exit={result}); inspect GStreamer and logcat")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", help="authorized physical USB serial; otherwise require exactly one")
@@ -68,8 +88,7 @@ def main():
                 process = subprocess.Popen(pipeline, pass_fds=(stream.fileno(),))
                 result = process.wait()
                 print(f"GStreamer exit={result}; duration={time.monotonic() - beginning:.3f}s", flush=True)
-                if result:
-                    raise RuntimeError("pipeline failed; inspect GStreamer and logcat")
+                return classify_pipeline_exit(result, stream)
         finally:
             if process is not None and process.poll() is None:
                 process.send_signal(signal.SIGINT)
@@ -93,7 +112,7 @@ def interrupted(*_):
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, interrupted)
     try:
-        main()
+        raise SystemExit(main())
     except KeyboardInterrupt:
         print("PoC stopped; resources cleaned up")
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
