@@ -10,7 +10,7 @@ import android.widget.Button
 import android.widget.TextView
 
 class MainActivity : Activity(), SurfaceHolder.Callback {
-    private var receiver: VideoReceiver? = null
+    private var receiver: SessionReceiver? = null
     private lateinit var video: SurfaceView
     private lateinit var start: Button
     private lateinit var stop: Button
@@ -32,7 +32,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             insets
         }
         video = findViewById(R.id.video)
-        video.holder.setFixedSize(1280, 720)
         video.holder.addCallback(this)
         start = findViewById(R.id.start_receiver)
         stop = findViewById(R.id.stop_receiver)
@@ -41,7 +40,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             if (receiver == null && video.holder.surface.isValid) {
                 start.isEnabled = false
                 stop.isEnabled = true
-                val session = VideoReceiver(video.holder.surface,
+                val session = SessionReceiver(video.holder.surface,
                     { text -> runOnUiThread { status.text = text } },
                     { runOnUiThread {
                         receiver = null

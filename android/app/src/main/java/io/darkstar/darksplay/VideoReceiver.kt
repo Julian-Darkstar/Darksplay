@@ -10,12 +10,14 @@ import android.os.SystemClock
 import android.util.Log
 import android.system.Os
 import android.system.OsConstants
+import android.system.StructPollfd
 import android.view.Surface
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicLong
 
 /** One explicitly armed session, one worker, no persistent Android service. */
-internal class VideoReceiver(private val surface: Surface, private val report: (String) -> Unit,
+internal class VideoReceiver(private val surface: Surface, private val config: VideoConfig,
+    private val report: (String) -> Unit, private val connected: () -> Unit,
     private val finished: () -> Unit) {
     @Volatile private var stopping = false
     private val lock = Any()
@@ -23,6 +25,16 @@ internal class VideoReceiver(private val surface: Surface, private val report: (
     private var socket: LocalSocket? = null
     private val rendered = AtomicLong()
     private var worker: Thread? = null
+
+    fun prepare() {
+        synchronized(lock) {
+            check(!stopping) { "Session stopped" }
+            server = LocalServerSocket(SOCKET_NAME)
+        }
+    }
+
+    fun awaitTermination() { worker?.join(3000) }
+    fun isAlive(): Boolean = worker?.isAlive == true
 
     fun start() {
         worker = Thread({ runSession() }, "DarksplayVideo").also { it.start() }
@@ -50,35 +62,40 @@ internal class VideoReceiver(private val surface: Surface, private val report: (
         var previousRendered = 0L
         var reason = "Stream terminado"
         try {
-            synchronized(lock) {
-                if (stopping) return
-                server = LocalServerSocket(SOCKET_NAME)
+            if (stopping) return
+            Log.i(TAG, "configured video receiver; localabstract:$SOCKET_NAME prepared")
+            val listener = server ?: error("Video listener not prepared")
+            val poll = StructPollfd().apply {
+                fd = listener.fileDescriptor
+                events = OsConstants.POLLIN.toShort()
             }
-            Log.i(TAG, "receiver started; localabstract:$SOCKET_NAME prepared")
-            report("Receiver listo; esperando host USB")
-            val connected = server!!.accept()
+            check(Os.poll(arrayOf(poll), 5000) > 0) { "Video connection timeout" }
+            val accepted = listener.accept()
             synchronized(lock) {
-                if (stopping) { connected.close(); return }
-                socket = connected
+                if (stopping) { accepted.close(); return }
+                socket = accepted
+                server?.close()
+                server = null
             }
-            connected.soTimeout = 5000
+            connected()
+            accepted.soTimeout = 5000
             Log.i(TAG, "ADB connection accepted")
-            val reader = AnnexBReader(connected.inputStream)
+            val reader = AnnexBReader(accepted.inputStream)
             val first = reader.nextAccessUnit() ?: error("Stream vacío")
             Log.i(TAG, "first data received; access unit bytes=${first.size}")
-            val format = MediaFormat.createVideoFormat("video/avc", 1280, 720).apply {
-                setInteger(MediaFormat.KEY_FRAME_RATE, 30)
+            val format = MediaFormat.createVideoFormat(config.mime, config.width, config.height).apply {
+                setInteger(MediaFormat.KEY_FRAME_RATE, config.fps)
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, AnnexBReader.MAX_BYTES)
                 setByteBuffer("csd-0", ByteBuffer.wrap(AnnexBReader.parameterSet(first, 7)))
                 setByteBuffer("csd-1", ByteBuffer.wrap(AnnexBReader.parameterSet(first, 8)))
             }
-            val decoder = MediaCodec.createDecoderByType("video/avc")
+            val decoder = MediaCodec.createDecoderByType(config.mime)
             codec = decoder
             decoder.configure(format, surface, null, 0)
             decoder.setOnFrameRenderedListener({ _, _, _ ->
                 if (rendered.incrementAndGet() == 1L) {
                     Log.i(TAG, "first frame rendered to Surface")
-                    report("Vídeo recibido: 1280×720 / 30 FPS nominales")
+                    report("Vídeo recibido: ${config.width}×${config.height} / ${config.fps} FPS nominales")
                 }
             }, Handler(Looper.getMainLooper()))
             decoder.start()
@@ -123,7 +140,7 @@ internal class VideoReceiver(private val surface: Surface, private val report: (
             var unit: ByteArray? = first
             while (!stopping && unit != null) {
                 received += unit.size
-                queue(unit, queued * 1_000_000 / 30)
+                queue(unit, queued * 1_000_000 / config.fps)
                 queued++
                 drain()
                 val now = SystemClock.elapsedRealtime()
@@ -138,7 +155,7 @@ internal class VideoReceiver(private val surface: Surface, private val report: (
                 unit = reader.nextAccessUnit()
             }
             if (!stopping) {
-                queue(null, queued * 1_000_000 / 30)
+                queue(null, queued * 1_000_000 / config.fps)
                 val deadline = SystemClock.elapsedRealtime() + 2000
                 while (!stopping && !drain() && SystemClock.elapsedRealtime() < deadline) Thread.sleep(5)
             }

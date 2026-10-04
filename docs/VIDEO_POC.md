@@ -1,5 +1,8 @@
 # V0.1-A — vídeo sintético H.264 mediante ADB/USB
 
+> Evidencia histórica V0.1-A (base `0142e8d`). El sender actual añade control
+> V0.1-B antes del mismo pipeline de vídeo; véase [SESSION_POC.md](SESSION_POC.md).
+
 Experimento específico Linux/Android, no un monitor extendido ni V0.1 completo.
 El host C++ permanece informativo. La generación se aísla en `gst-launch-1.0` y
 `tools/video-poc.py`, sin dependencias GStreamer en CMake.

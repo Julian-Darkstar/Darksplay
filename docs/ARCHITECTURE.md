@@ -20,12 +20,12 @@ no interfaces ya fijadas ni un escritorio extendido funcional.
 - **PipeWire:** futura captura Linux, con integración apropiada GNOME/Wayland.
   No crea por sí solo el monitor virtual requerido por Darksplay.
 - **Protocol:** significado de mensajes y negociación, independiente del SO y
-  del mecanismo de transporte. Todavía no hay serialización implementada.
+  del mecanismo de transporte. V0.1-B experimenta con JSON Lines, sin serialización definitiva.
 - **Transport:** entrega de mensajes. V0.x exclusivamente ADB sobre USB físico.
   ADB es el mecanismo de comunicación con Android, no un codec ni el protocolo.
-  V0.1-A prueba un forwarding entre sockets Unix locales; el control plane
-  y la integración definitiva quedan pendientes.
-- **Android:** V0.1-A ya prueba MediaCodec/SurfaceView para H.264 sintético fijo.
+  V0.1-A prueba forwarding entre sockets Unix locales; V0.1-B añade
+  control separado ([sesión experimental](SESSION_POC.md)). La integración definitiva sigue pendiente.
+- **Android:** V0.1-A ya prueba MediaCodec/SurfaceView para H.264 sintético; V0.1-B recibe parámetros por VIDEO_CONFIG.
   La negociación de capacidades sigue pendiente.
 
 ```mermaid

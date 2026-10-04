@@ -1,6 +1,6 @@
 # Protocolo Darksplay — propuesta conceptual 0.1
 
-Documento de diseño, sin implementación. La versión 0.1 identifica esta propuesta,
+Propuesta de diseño futuro; el apartado V0.1-B registra la excepción implementada. La versión 0.1 identifica esta propuesta,
 no una versión de wire protocol aceptada. El protocolo será independiente del SO
 host y del transporte. V0.x solo implementará ADB mediante USB físico.
 
@@ -20,9 +20,8 @@ y tilt. Solo se habilitarán capacidades soportadas y aceptadas por ambos extrem
 S Pen es una posibilidad de dispositivo, no un requisito de fabricante.
 
 HELLO no sustituye la preparación explícita del cliente. La conexión física no
-constituye consentimiento ni inicia la sesión. Se deberá definir cómo se comunica
-el estado listo, cómo se confirman CONFIG y cambios, y cómo se rechazan versiones
-incompatibles o capacidades no soportadas.
+constituye consentimiento ni inicia la sesión. En V0.1-B la disponibilidad del endpoint tras Start representa preparación, sin
+mensaje READY. La negociación futura de capacidades y cambios sigue pendiente.
 
 ## Excepción experimental V0.1-A
 
@@ -31,10 +30,33 @@ parámetros fijos, mediante forwarding ADB de sockets Unix. No implementa los
 mensajes de esta propuesta ni control plane, negociación o serialización definitiva.
 El estado listo depende de la acción explícita Start receiver en Android.
 
+## Experimento implementado V0.1-B
+
+[Session PoC](SESSION_POC.md) añade control separado del vídeo sobre dos sockets
+Unix/localabstract mediante ADB/USB físico. Control usa JSON Lines UTF-8, una línea
+por objeto, límite de 4096 bytes sin LF y wire version `protocol=1`.
+
+| Mensaje experimental | Dirección | Campos exactos |
+| --- | --- | --- |
+| HELLO | Host → Android | `type="hello"`, `protocol=1` |
+| HELLO_ACK | Android → Host | `type="hello_ack"`, `protocol=1` |
+| VIDEO_CONFIG | Host → Android | `type="video_config"`, `codec="h264"`, `width`, `height`, `fps` enteros |
+| VIDEO_CONFIG_ACK | Android → Host | `type="video_config_ack"` |
+| GOODBYE | Host → Android | `type="goodbye"`, `reason` string diagnóstico |
+
+No empieza vídeo hasta ambos ACK. Parámetros válidos en el PoC: width 1..1920,
+height 1..1080, fps 1..60; no hay negociación de capabilities. Plazos de handshake
+5 s; inválidos/EOF/timeout cierran la sesión. GOODBYE es best effort, nunca requisito
+para cleanup. Annex B + AUD continúa exclusivamente en el video plane, sin
+VIDEO_FRAME ni encapsulación Darksplay por frame.
+
+**JSON Lines, wire version 1, límites y Annex B son experimentales de V0.1-B,
+no formato definitivo de Darksplay 1.0.** Los mensajes futuros de la tabla
+conceptual no están implementados; no hay CONFIG, PING ni INPUT_EVENT.
+
 ## Pendiente de revisión para integrar V0.1
 
-Framing, serialización, versión efectiva, límites de mensajes/buffers, correlación,
-confirmaciones, errores, timeouts, reconexión y backpressure. También quedan por
-acordar los canales ADB y la comprobación de USB físico para excluir ADB inalámbrico.
+Capabilities, correlación, formato definitivo, reconexión y backpressure. Los dos
+canales y comprobación USB ya se prueban en el PoC, sin fijar arquitectura final.
 No se fijan offsets, tamaños definitivos, endianness ni estructuras binarias.
-La pérdida de transporte deberá terminar y liberar la sesión aun sin GOODBYE.
+La pérdida de transporte termina y libera la sesión aun sin GOODBYE.

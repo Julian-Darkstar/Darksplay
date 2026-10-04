@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V0.1-A only: GStreamer -> AF_UNIX -> ADB/physical USB -> Android."""
+"""V0.1-B session: GStreamer -> AF_UNIX -> ADB/physical USB -> Android."""
 import argparse
 import os
 from pathlib import Path
@@ -8,9 +8,10 @@ import socket
 import subprocess
 import tempfile
 import time
+import select
+from session_control import Control, ProtocolError, TransportClosed
 
 ROOT = Path(__file__).resolve().parent.parent
-REMOTE = "localabstract:io.darkstar.darksplay.video"
 
 
 def classify_pipeline_exit(result, stream):
@@ -31,6 +32,95 @@ def classify_pipeline_exit(result, stream):
                   "and GStreamer received SIGPIPE; exact reason unknown", flush=True)
             return 2  # distinguish interruption from completion and pipeline failure
     raise RuntimeError(f"unexpected GStreamer failure (exit={result}); inspect GStreamer and logcat")
+
+
+def pipeline_args(fd, seconds):
+    pipeline = ["gst-launch-1.0", "-e", "-v", "videotestsrc", "is-live=true", "pattern=ball"]
+    if seconds:
+        pipeline.append(f"num-buffers={seconds * 30}")
+    pipeline += ["!", "video/x-raw,width=1280,height=720,framerate=30/1",
+                 "!", "videoconvert", "!", "video/x-raw,format=I420",
+                 "!", "openh264enc", "bitrate=4000000", "rate-control=bitrate",
+                 "gop-size=30", "complexity=low", "enable-frame-skip=false",
+                 "!", "h264parse", "config-interval=-1",
+                 "!", "video/x-h264,stream-format=byte-stream,alignment=au,profile=constrained-baseline",
+                 "!", "fdsink", f"fd={fd}", "sync=false"]
+    return pipeline
+
+
+def reap(process):
+    if process.poll() is None:
+        process.send_signal(signal.SIGINT)
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+
+def best_effort_goodbye(control, reason):
+    try:
+        control.goodbye(reason)
+    except (OSError, RuntimeError) as error:
+        print(f"GOODBYE unavailable: {error}", flush=True)
+
+
+def run_session(control, open_video, start_pipeline):
+    """Injectable boundaries let tests prove no video/process starts without both ACKs."""
+    def stream_video():
+        with open_video() as stream:
+            process = None
+            try:
+                process = start_pipeline(stream)
+                beginning = time.monotonic()
+                control_closed = False
+                while process.poll() is None:
+                    readable, _, _ = select.select([control.stream], [], [], 0.1)
+                    if readable:
+                        try:
+                            message = control.read()
+                        except TransportClosed:
+                            control_closed = True
+                            break
+                        raise ProtocolError(f"unexpected control message while streaming: {message}")
+                if control_closed:
+                    reap(process)
+                    # Control loss must not hide an unrelated pipeline error racing EOF.
+                    if process.returncode not in (0, -signal.SIGPIPE, -signal.SIGINT,
+                                                  -signal.SIGTERM, -signal.SIGKILL):
+                        raise RuntimeError(f"unexpected GStreamer failure (exit={process.returncode}) alongside control EOF")
+                    print(f"GStreamer exit={process.returncode}; control EOF; "
+                          "PoC outcome=transport_closed", flush=True)
+                    return 2
+                result = process.wait()
+                print(f"GStreamer exit={result}; duration={time.monotonic() - beginning:.3f}s", flush=True)
+                outcome = classify_pipeline_exit(result, stream)
+                if outcome == 0:
+                    stream.shutdown(socket.SHUT_WR)  # deliver video EOF before GOODBYE
+                    control.goodbye("completed")
+                    try:
+                        message = control.read()
+                    except TransportClosed:
+                        print("Session completed; Android closed control after GOODBYE", flush=True)
+                    else:
+                        raise ProtocolError(f"unexpected response after GOODBYE: {message}")
+                else:
+                    best_effort_goodbye(control, "transport_closed")
+                return outcome
+            finally:
+                if process is not None:
+                    reap(process)
+    try:
+        return control.begin_video(stream_video)
+    except BaseException:
+        best_effort_goodbye(control, "interrupted")
+        raise
+    finally:
+        control.close()
 
 
 def main():
@@ -58,50 +148,35 @@ def main():
         subprocess.run(["gst-inspect-1.0", element], check=True, stdout=subprocess.DEVNULL)
     directory = ROOT / "build" / "video-poc"
     directory.mkdir(parents=True, exist_ok=True)
-    process = None
-    forwarded = False
+    forwards = []
     with tempfile.TemporaryDirectory(prefix="session-", dir=directory) as temporary:
-        address = str(Path(temporary) / "video.sock")
-        if len(os.fsencode(address)) >= 104:
-            parser.error("project path is too long for a Unix socket; use a shorter checkout path")
-        local = "localfilesystem:" + address
+        paths = {name: str(Path(temporary) / (name + ".sock")) for name in ("control", "video")}
+        if any(len(os.fsencode(path)) >= 104 for path in paths.values()):
+            parser.error("project path is too long for a Unix socket")
         try:
-            subprocess.run(adb + ["forward", "--no-rebind", local, REMOTE], check=True)
-            forwarded = True
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
-                stream.settimeout(5)
-                stream.connect(address)
-                stream.settimeout(None)
-                pipeline = ["gst-launch-1.0", "-e", "-v", "videotestsrc", "is-live=true", "pattern=ball"]
-                if args.seconds:
-                    pipeline.append(f"num-buffers={args.seconds * 30}")
-                pipeline += ["!", "video/x-raw,width=1280,height=720,framerate=30/1",
-                             "!", "videoconvert", "!", "video/x-raw,format=I420",
-                             "!", "openh264enc", "bitrate=4000000", "rate-control=bitrate",
-                             "gop-size=30", "complexity=low", "enable-frame-skip=false",
-                             "!", "h264parse", "config-interval=-1",
-                             "!", "video/x-h264,stream-format=byte-stream,alignment=au,profile=constrained-baseline",
-                             "!", "fdsink", f"fd={stream.fileno()}", "sync=false"]
-                print(f"USB serial={serial}; receiver must already be explicitly started", flush=True)
-                print("Pipeline: " + " ".join(pipeline), flush=True)
-                beginning = time.monotonic()
-                process = subprocess.Popen(pipeline, pass_fds=(stream.fileno(),))
-                result = process.wait()
-                print(f"GStreamer exit={result}; duration={time.monotonic() - beginning:.3f}s", flush=True)
-                return classify_pipeline_exit(result, stream)
-        finally:
-            if process is not None and process.poll() is None:
-                process.send_signal(signal.SIGINT)
+            for name, path in paths.items():
+                local = "localfilesystem:" + path
+                remote = "localabstract:io.darkstar.darksplay." + name
+                subprocess.run(adb + ["forward", "--no-rebind", local, remote], check=True)
+                forwards.append(local)
+            def connect(name):
+                stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 try:
-                    process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    process.terminate()
-                    try:
-                        process.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
-            if forwarded:
+                    stream.settimeout(5)
+                    stream.connect(paths[name])
+                    stream.settimeout(None)
+                    return stream
+                except BaseException:
+                    stream.close()
+                    raise
+            def start_pipeline(stream):
+                pipeline = pipeline_args(stream.fileno(), args.seconds)
+                print("Pipeline: " + " ".join(pipeline), flush=True)
+                return subprocess.Popen(pipeline, pass_fds=(stream.fileno(),))
+            print(f"USB serial={serial}; explicit Android receiver required", flush=True)
+            return run_session(Control(connect("control")), lambda: connect("video"), start_pipeline)
+        finally:
+            for local in reversed(forwards):
                 subprocess.run(adb + ["forward", "--remove", local], check=False)
 
 

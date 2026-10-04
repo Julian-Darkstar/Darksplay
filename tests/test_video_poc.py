@@ -4,6 +4,8 @@ from pathlib import Path
 import signal
 import socket
 import unittest
+import sys
+sys.path.insert(0, str(Path(__file__).parents[1] / "tools"))
 
 spec = importlib.util.spec_from_file_location("video_poc", Path(__file__).parents[1] / "tools/video-poc.py")
 poc = importlib.util.module_from_spec(spec)

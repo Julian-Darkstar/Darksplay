@@ -1,13 +1,14 @@
-# Android de Darksplay — PoC V0.1-A
+# Android de Darksplay — PoC V0.1-B
 
 Aplicación Kotlin mínima con nombre Darksplay, package `io.darkstar.darksplay`,
 una Activity nativa con logo, Start/Stop receiver y SurfaceView. Un receiver
 experimental utiliza LocalServerSocket, un parser Annex B y MediaCodec `video/avc`
-a 1280×720/30 FPS fijos. Exige acción explícita antes de aceptar vídeo ADB/USB.
+con configuración recibida mediante VIDEO_CONFIG (PoC host: 1280×720/30 FPS).
+Start prepara control; HELLO/ACK y VIDEO_CONFIG/ACK preceden al vídeo ADB/USB.
 No implementa protocolo final, servicios, sockets IP, captura, escritorio extendido,
 entrada remota, telemetría ni analytics. No declara permisos especiales ni Internet.
 
-[Procedimiento, pipeline y límites del PoC](../docs/VIDEO_POC.md).
+[Sesión V0.1-B](../docs/SESSION_POC.md) y [evidencia histórica V0.1-A](../docs/VIDEO_POC.md).
 
 ## Requisitos y versiones
 
@@ -129,3 +130,13 @@ en el launcher depende del sistema Android.
 - Desconexión USB física: app abierta, Stream terminado y decoder liberado;
   reconectar no inicia otra sesión. Stop también funciona esperando conexión.
 - Logs y detalles de desconexión/mediciones: `../docs/VIDEO_POC.md`.
+
+## Validación V0.1-B
+
+Control separado JSON Lines y vídeo Annex B; configuración recibida antes de
+MediaCodec. `assembleDebug lint --offline --no-daemon` compila correctamente con
+las versiones existentes. Lint mantiene 0 errores y 2 warnings históricos.
+Sesión física normal de 10 s/300 frames, GOODBYE y cleanup; Stop, datos inválidos
+y desconexión USB dejan la app utilizable. Detalles y prueba de reconexión en
+[SESSION_POC.md](../docs/SESSION_POC.md), con las pruebas no realizadas explícitas.
+No se midió latencia extremo a extremo ni se implementó captura/monitor virtual.

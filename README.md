@@ -4,7 +4,8 @@
 
 Darksplay es un proyecto experimental que busca permitir utilizar un dispositivo
 Android como monitor extendido de una computadora. Actualmente incluye el
-bootstrap y un PoC V0.1-A de vídeo sintético H.264 sobre ADB/USB físico.
+bootstrap, el PoC V0.1-A de vídeo sintético H.264 sobre ADB/USB físico
+y una sesión experimental V0.1-B con control separado.
 Todavía no ofrece un monitor extendido ni captura del escritorio.
 
 La primera plataforma host será Fedora Linux con GNOME y Wayland; el cliente
@@ -19,12 +20,14 @@ Windows posteriormente, sin vincular el diseño a fabricantes o hardware de prue
   SurfaceView; Gradle Wrapper y APK debug compilado.
 - PoC GStreamer/OpenH264 1280×720/30 FPS por ADB/USB físico, validado en Android
   real durante 60 segundos; véase [procedimiento y límites](docs/VIDEO_POC.md).
+- Control V0.1-B: HELLO/ACK, VIDEO_CONFIG/ACK y GOODBYE mediante JSON Lines;
+  véase [sesión experimental y validación](docs/SESSION_POC.md).
 - Arquitectura, propuesta conceptual de protocolo, privacidad y roadmap.
 - Logo oficial conservado como recurso fuente, sin modificaciones.
 
 ## Planned
 
-- Integración de sesión/control y negociación: V0.1 todavía no está completo.
+- Protocolo definitivo, capabilities y evaluación de latencia: V0.1 sigue siendo experimental.
 - Captura PipeWire, escritorio extendido, aceleración y entrada touch/stylus.
 - Backend Windows en una etapa futura.
 
@@ -66,6 +69,7 @@ CCACHE_DIR="$PWD/build/.ccache" cmake --build build
 ## Documentación
 
 - [Vídeo PoC V0.1-A](docs/VIDEO_POC.md)
+- [Sesión PoC V0.1-B](docs/SESSION_POC.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Protocolo conceptual](docs/PROTOCOL.md)
 - [Privacidad](docs/PRIVACY.md)
