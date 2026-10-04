@@ -34,3 +34,6 @@ local.properties
 *.swo
 *~
 *.tmp
+
+# Herramientas Python del PoC
+__pycache__/

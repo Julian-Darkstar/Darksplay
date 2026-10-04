@@ -1,9 +1,11 @@
-# Arquitectura — Fase 0
+# Arquitectura
 
-Darksplay busca convertir Android en un monitor extendido. Solo están implementados
-el ejecutable host informativo, su prueba y el bootstrap Android Kotlin
-con pantalla de identificación. Los componentes de los diagramas son
-responsabilidades futuras, no implementaciones ni interfaces ya fijadas.
+Darksplay busca convertir Android en un monitor extendido. Están implementados
+el host informativo, su prueba y un receiver Android experimental de vídeo sintético.
+V0.1-A usa `gst-launch-1.0`/OpenH264, un script específico de ADB/USB y
+MediaCodec/SurfaceView; véase [el PoC](VIDEO_POC.md). No se implementa todavía Core
+ni un backend de display/captura. Los diagramas describen la arquitectura futura,
+no interfaces ya fijadas ni un escritorio extendido funcional.
 
 ## Responsabilidades
 
@@ -21,9 +23,10 @@ responsabilidades futuras, no implementaciones ni interfaces ya fijadas.
   del mecanismo de transporte. Todavía no hay serialización implementada.
 - **Transport:** entrega de mensajes. V0.x exclusivamente ADB sobre USB físico.
   ADB es el mecanismo de comunicación con Android, no un codec ni el protocolo.
-  El mapeo concreto de canales ADB queda para revisión antes de V0.1.
-- **Android:** cliente Kotlin que negociará capacidades y usará MediaCodec para
-  decodificar vídeo y una Surface o alternativa nativa para presentarlo.
+  V0.1-A prueba un forwarding entre sockets Unix locales; el control plane
+  y la integración definitiva quedan pendientes.
+- **Android:** V0.1-A ya prueba MediaCodec/SurfaceView para H.264 sintético fijo.
+  La negociación de capacidades sigue pendiente.
 
 ```mermaid
 flowchart TD

@@ -3,8 +3,9 @@
 ![Logo oficial de Darksplay](assets/branding/Darksplay.png)
 
 Darksplay es un proyecto experimental que busca permitir utilizar un dispositivo
-Android como monitor extendido de una computadora. Actualmente solo existe el
-bootstrap de la Fase 0: no ofrece todavía una sesión de monitor ni vídeo.
+Android como monitor extendido de una computadora. Actualmente incluye el
+bootstrap y un PoC V0.1-A de vídeo sintético H.264 sobre ADB/USB físico.
+Todavía no ofrece un monitor extendido ni captura del escritorio.
 
 La primera plataforma host será Fedora Linux con GNOME y Wayland; el cliente
 inicial será Android. La separación del núcleo y los backends permitirá evaluar
@@ -14,16 +15,17 @@ Windows posteriormente, sin vincular el diseño a fabricantes o hardware de prue
 
 - Host mínimo C++20/CMake: imprime `Darksplay host 0.0.1-dev` y termina con código 0.
 - CTest sin frameworks externos: comprueba salida y código de terminación.
-- Bootstrap Android Kotlin `io.darkstar.darksplay`: pantalla con nombre y logo,
-  Gradle Wrapper y APK debug compilado; véase [Android](android/README.md).
+- Android Kotlin `io.darkstar.darksplay`: receiver explícito, MediaCodec y
+  SurfaceView; Gradle Wrapper y APK debug compilado.
+- PoC GStreamer/OpenH264 1280×720/30 FPS por ADB/USB físico, validado en Android
+  real durante 60 segundos; véase [procedimiento y límites](docs/VIDEO_POC.md).
 - Arquitectura, propuesta conceptual de protocolo, privacidad y roadmap.
 - Logo oficial conservado como recurso fuente, sin modificaciones.
 
 ## Planned
 
-- Vídeo generado, GStreamer/OpenH264 y transporte ADB sobre USB físico.
-- MediaCodec y renderizado nativo Android; después captura PipeWire,
-  escritorio extendido, aceleración y entrada touch/stylus.
+- Integración de sesión/control y negociación: V0.1 todavía no está completo.
+- Captura PipeWire, escritorio extendido, aceleración y entrada touch/stylus.
 - Backend Windows en una etapa futura.
 
 V0.x usará exclusivamente ADB mediante USB físico. No se implementan transportes
@@ -63,6 +65,7 @@ CCACHE_DIR="$PWD/build/.ccache" cmake --build build
 
 ## Documentación
 
+- [Vídeo PoC V0.1-A](docs/VIDEO_POC.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Protocolo conceptual](docs/PROTOCOL.md)
 - [Privacidad](docs/PRIVACY.md)

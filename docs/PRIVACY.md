@@ -1,8 +1,10 @@
 # Privacidad
 
-Estas son garantías de diseño para el runtime futuro. La Fase 0 únicamente imprime
-la identificación del host; el bootstrap Android muestra nombre y logo.
-No implementan conexión ni sesión.
+Estas son garantías de diseño para Darksplay. El host C++ sigue informativo;
+V0.1-A prueba vídeo sintético local mediante GStreamer y forwarding ADB/USB.
+El receiver Android requiere acción explícita y no declara permisos, incluido
+Internet. Sus sockets son Unix locales, sin listeners IP de Darksplay.
+No hay cuentas, cloud ni telemetría; no se necesita Internet durante el PoC.
 
 - Local-first: una sesión USB deberá funcionar completamente sin Internet.
 - Sin servicios cloud durante runtime, cuentas, telemetría ni analytics.

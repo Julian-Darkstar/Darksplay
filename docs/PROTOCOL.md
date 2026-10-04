@@ -24,7 +24,14 @@ constituye consentimiento ni inicia la sesión. Se deberá definir cómo se comu
 el estado listo, cómo se confirman CONFIG y cambios, y cómo se rechazan versiones
 incompatibles o capacidades no soportadas.
 
-## Pendiente de revisión antes de V0.1
+## Excepción experimental V0.1-A
+
+El [PoC de vídeo](VIDEO_POC.md) envía únicamente Annex B con AUD, SPS/PPS y
+parámetros fijos, mediante forwarding ADB de sockets Unix. No implementa los
+mensajes de esta propuesta ni control plane, negociación o serialización definitiva.
+El estado listo depende de la acción explícita Start receiver en Android.
+
+## Pendiente de revisión para integrar V0.1
 
 Framing, serialización, versión efectiva, límites de mensajes/buffers, correlación,
 confirmaciones, errores, timeouts, reconexión y backpressure. También quedan por

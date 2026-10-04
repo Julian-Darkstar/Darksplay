@@ -5,7 +5,8 @@ de validación técnica y revisión de decisiones pendientes.
 
 | Etapa | Alcance y objetivo |
 | --- | --- |
-| PHASE 0 | Bootstrap, arquitectura, documentación, host mínimo y CTest. Bootstrap Android Kotlin y APK debug validados; instalación física pendiente de dispositivo ADB. |
+| PHASE 0 | Bootstrap, arquitectura, documentación, host mínimo y CTest. Bootstrap Android Kotlin y APK debug validados; instalación física del bootstrap confirmada por el usuario. |
+| V0.1-A | PoC implementado: vídeo sintético OpenH264 → ADB/USB físico → MediaCodec/SurfaceView. Prueba de 60 s y 1.800 frames; no equivale a monitor extendido ni V0.1 completo. |
 | V0.1 | Patrón de vídeo generado en host → H.264 con OpenH264 → ADB/USB → Android → MediaCodec → Surface o alternativa nativa adecuada. Demostrar transporte y reproducción con baja latencia razonable; definir métricas antes de evaluar. |
 | V0.2 | Captura real de pantalla mediante PipeWire. |
 | V0.3 | Monitor virtual y escritorio extendido real; mecanismo Linux pendiente de investigación. |

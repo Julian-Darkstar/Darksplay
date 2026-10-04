@@ -1,9 +1,13 @@
-# Bootstrap Android de Darksplay
+# Android de Darksplay — PoC V0.1-A
 
 Aplicación Kotlin mínima con nombre Darksplay, package `io.darkstar.darksplay`,
-una Activity nativa y una pantalla que muestra el logo oficial y el nombre.
-No implementa sesiones, streaming, protocolo, transporte, MediaCodec, servicios,
-networking, entrada remota, telemetría ni analytics. No declara permisos especiales.
+una Activity nativa con logo, Start/Stop receiver y SurfaceView. Un receiver
+experimental utiliza LocalServerSocket, un parser Annex B y MediaCodec `video/avc`
+a 1280×720/30 FPS fijos. Exige acción explícita antes de aceptar vídeo ADB/USB.
+No implementa protocolo final, servicios, sockets IP, captura, escritorio extendido,
+entrada remota, telemetría ni analytics. No declara permisos especiales ni Internet.
+
+[Procedimiento, pipeline y límites del PoC](../docs/VIDEO_POC.md).
 
 ## Requisitos y versiones
 
@@ -81,7 +85,7 @@ adb -s SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Sustituir SERIAL por el identificador mostrado por ADB. Instalar no inicia una
-sesión Darksplay; no hay transporte implementado. No se modifican opciones del
+sesión Darksplay: el receiver solo se prepara al pulsar Start receiver. No se modifican opciones del
 dispositivo ni se habilita ADB inalámbrico.
 
 ## Logo
@@ -92,7 +96,7 @@ pantalla y como icono. No hay reinterpretación ni variantes artísticas.
 El ImageView conserva proporciones con `fitCenter`; la representación del icono
 en el launcher depende del sistema Android.
 
-## Validación de esta fase
+## Validación histórica del bootstrap
 
 - `assembleDebug --no-daemon`: `BUILD SUCCESSFUL in 47s`, 35 tareas ejecutadas,
   con el JDK integrado y las variables locales documentadas arriba.
@@ -104,10 +108,24 @@ en el launcher depende del sistema Android.
 - APK generado: `app/build/outputs/apk/debug/app-debug.apk`.
 - El APK confirma package, nombre, SDK mínimo 23 y target 37; no contiene permisos.
 - `adb devices -l` terminó correctamente con lista vacía: instalación física
-  y apariencia en dispositivo no verificadas.
+  y apariencia no verificadas en aquella sesión; posteriormente el usuario
+  confirmó instalación y ejecución del bootstrap en hardware.
 - Logo generado y original tienen el mismo SHA-256.
 - Advertencia de build no bloqueante: el lector SDK entiende XML hasta versión 3
   y encontró XML versión 4. No se modificó el SDK para suprimirla.
 - En este entorno Gradle y ADB requirieron ejecución fuera del sandbox: este
   bloquea networking de build, bloqueos locales de Gradle y acceso USB/servidor ADB.
 
+
+## Validación V0.1-A
+
+- Wrapper `assembleDebug lint --offline --no-daemon`: correcto, usando el JDK
+  integrado y variables locales anteriores. Lint: 0 errores, 2 advertencias
+  (versión Gradle más reciente y reglas modernas de backup).
+- Instalación debug en dispositivo autorizado USB: `Success`.
+- Decoder seleccionado nativamente en hardware de prueba: `c2.exynos.h264.decoder`.
+  El código no depende de ese fabricante ni selecciona el codec por nombre.
+- Prueba continua de 60 s: 1.800 frames renderizados; EOF y Stop liberan recursos.
+- Desconexión USB física: app abierta, Stream terminado y decoder liberado;
+  reconectar no inicia otra sesión. Stop también funciona esperando conexión.
+- Logs y detalles de desconexión/mediciones: `../docs/VIDEO_POC.md`.
