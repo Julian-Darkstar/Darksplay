@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import signal
 import socket
+import threading
 import unittest
 import sys
 sys.path.insert(0, str(Path(__file__).parents[1] / "tools"))
@@ -39,6 +40,11 @@ class ExitClassification(unittest.TestCase):
         self.receiver.close()
         with self.assertRaisesRegex(RuntimeError, "exit=1"):
             poc.classify_pipeline_exit(1, self.sender)
+
+    def test_revoked_session_makes_gstreamer_exit_expected(self):
+        revoked = threading.Event()
+        revoked.set()
+        self.assertEqual(poc.classify_pipeline_exit(1, self.sender, revoked.is_set()), 2)
 
     def test_unrelated_signal_is_failure(self):
         self.receiver.close()

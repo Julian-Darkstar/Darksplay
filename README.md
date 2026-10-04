@@ -4,9 +4,10 @@
 
 Darksplay es un proyecto experimental que busca permitir utilizar un dispositivo
 Android como monitor extendido de una computadora. Actualmente incluye el
-bootstrap, el PoC V0.1-A de vídeo sintético H.264 sobre ADB/USB físico
-y una sesión experimental V0.1-B con control separado.
-Todavía no ofrece un monitor extendido ni captura del escritorio.
+bootstrap, la sesión experimental V0.1-B con control separado y V0.2: captura
+real de pantalla mediante xdg-desktop-portal ScreenCast y PipeWire sobre
+ADB/USB físico. El monitor virtual y el escritorio extendido siguen pendientes
+para V0.3.
 
 La primera plataforma host será Fedora Linux con GNOME y Wayland; el cliente
 inicial será Android. La separación del núcleo y los backends permitirá evaluar
@@ -20,6 +21,9 @@ Windows posteriormente, sin vincular el diseño a fabricantes o hardware de prue
   SurfaceView; Gradle Wrapper y APK debug compilado.
 - PoC GStreamer/OpenH264 1280×720/30 FPS por ADB/USB físico, validado en Android
   real durante 60 segundos; véase [procedimiento y límites](docs/VIDEO_POC.md).
+- V0.2 PipeWire Capture: captura real de un monitor mediante el portal ScreenCast
+  de GNOME, con consentimiento explícito, validada físicamente; véase
+  [PIPEWIRE_POC.md](docs/PIPEWIRE_POC.md).
 - Control V0.1-B: HELLO/ACK, VIDEO_CONFIG/ACK y GOODBYE mediante JSON Lines;
   véase [sesión experimental y validación](docs/SESSION_POC.md).
 - Arquitectura, propuesta conceptual de protocolo, privacidad y roadmap.
@@ -28,7 +32,8 @@ Windows posteriormente, sin vincular el diseño a fabricantes o hardware de prue
 ## Planned
 
 - Protocolo definitivo, capabilities y evaluación de latencia: V0.1 sigue siendo experimental.
-- Captura PipeWire, escritorio extendido, aceleración y entrada touch/stylus.
+- Monitor virtual y escritorio extendido real: V0.3.
+- Aceleración de encoding y entrada touch/stylus: fases posteriores.
 - Backend Windows en una etapa futura.
 
 V0.x usará exclusivamente ADB mediante USB físico. No se implementan transportes
@@ -70,6 +75,7 @@ CCACHE_DIR="$PWD/build/.ccache" cmake --build build
 
 - [Vídeo PoC V0.1-A](docs/VIDEO_POC.md)
 - [Sesión PoC V0.1-B](docs/SESSION_POC.md)
+- [V0.2 PipeWire Capture](docs/PIPEWIRE_POC.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Protocolo conceptual](docs/PROTOCOL.md)
 - [Privacidad](docs/PRIVACY.md)

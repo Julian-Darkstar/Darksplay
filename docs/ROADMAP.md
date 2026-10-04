@@ -8,7 +8,7 @@ de validación técnica y revisión de decisiones pendientes.
 | PHASE 0 | Bootstrap, arquitectura, documentación, host mínimo y CTest. Bootstrap Android Kotlin y APK debug validados; instalación física del bootstrap confirmada por el usuario. |
 | V0.1-A | PoC implementado: vídeo sintético OpenH264 → ADB/USB físico → MediaCodec/SurfaceView. Prueba de 60 s y 1.800 frames; no equivale a monitor extendido ni V0.1 completo. |
 | V0.1 | Patrón de vídeo generado en host → H.264 con OpenH264 → ADB/USB → Android → MediaCodec → Surface o alternativa nativa adecuada. Demostrar transporte y reproducción con baja latencia razonable; definir métricas antes de evaluar. |
-| V0.2 | Captura real de pantalla mediante PipeWire. |
+| V0.2 | **Implementado y validado.** Captura real de un monitor mediante `xdg-desktop-portal ScreenCast` + PipeWire, consentimiento explícito de GNOME, GStreamer/OpenH264 y ADB/USB físico. La validación física confirmó imagen cambiante, pantalla estática durante más de 15 s seguida de movimiento, revocación desde GNOME y cleanup de procesos/forwards. No incluye monitor virtual ni escritorio extendido. Véase [PIPEWIRE_POC.md](PIPEWIRE_POC.md). |
 | V0.3 | Monitor virtual y escritorio extendido real; mecanismo Linux pendiente de investigación. |
 | V0.4 | Codificación por hardware y optimización de latencia y recursos; VA-API candidato Linux. |
 | V0.5 | Entrada touch Android → Linux. |

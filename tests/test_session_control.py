@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import socket
 import sys
+import threading
 import unittest
 from unittest.mock import Mock
 sys.path.insert(0, str(Path(__file__).parents[1] / "tools"))
@@ -110,6 +111,49 @@ class ControlChecks(unittest.TestCase):
         process.wait.return_value = 9
         with self.assertRaisesRegex(RuntimeError, "unexpected GStreamer failure"):
             poc.run_session(self.control, lambda: video, lambda _: process)
+        self.assertEqual(video.fileno(), -1)
+        self.assertEqual(self.host.fileno(), -1)
+
+    def test_revoked_session_exit_is_expected_and_cleanup_is_idempotent(self):
+        self.peer.sendall(b'{"type":"hello_ack","protocol":1}\n{"type":"video_config_ack"}\n')
+        video, remote = socket.socketpair(socket.AF_UNIX)
+        self.addCleanup(remote.close)
+        revoked = threading.Event()
+        revoked.set()
+        process = Mock(returncode=1)
+        process.poll.return_value = 1
+        process.wait.return_value = 1
+
+        self.assertEqual(
+            poc.run_session(self.control, lambda: video, lambda _: process, revoked),
+            2,
+        )
+        self.assertEqual(video.fileno(), -1)
+        self.assertEqual(self.host.fileno(), -1)
+        self.control.close()
+
+    def test_revocation_after_stream_start_uses_same_goodbye_reason(self):
+        self.peer.sendall(b'{"type":"hello_ack","protocol":1}\n{"type":"video_config_ack"}\n')
+        video, remote = socket.socketpair(socket.AF_UNIX)
+        self.addCleanup(remote.close)
+        revoked = threading.Event()
+        process = Mock(returncode=1)
+        process.poll.return_value = None
+
+        def start_pipeline(_stream):
+            revoked.set()
+            return process
+
+        self.assertEqual(
+            poc.run_session(self.control, lambda: video, start_pipeline, revoked),
+            2,
+        )
+        self.assertTrue(
+            self.peer.recv(4096).endswith(
+                b'{"type":"goodbye","reason":"transport_closed"}\n'
+            )
+        )
+        process.send_signal.assert_called()
         self.assertEqual(video.fileno(), -1)
         self.assertEqual(self.host.fileno(), -1)
 
