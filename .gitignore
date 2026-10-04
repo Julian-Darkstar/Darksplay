@@ -1,0 +1,36 @@
+# CMake y compilación local
+/build/
+/build-*/
+/cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dll
+*.exe
+*.dylib
+
+# IDE y configuración local
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Android / Gradle (no excluir Wrapper ni configuración de build)
+.gradle/
+/android/**/build/
+local.properties
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# Temporales
+*.swp
+*.swo
+*~
+*.tmp
