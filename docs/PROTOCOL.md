@@ -10,7 +10,7 @@ host y del transporte. V0.x solo implementará ADB mediante USB físico.
 | CONFIG | Acordar parámetros de sesión | Host → Android, con confirmación por definir | Parámetros elegidos entre capacidades comunes | V0.1 |
 | VIDEO_CONFIG | Preparar decodificación | Host → Android | Codec, resolución, FPS y datos necesarios del decoder | V0.1 |
 | VIDEO_FRAME | Entregar vídeo comprimido | Host → Android | Payload codificado, tiempo de presentación e información de sincronización | V0.1 |
-| DISPLAY_RESIZE | Coordinar cambio de dimensiones | Ambas; autoridad por definir | Dimensiones solicitadas/aceptadas y actualización de configuración | V0.3 |
+| DISPLAY_RESIZE | Coordinar cambio de dimensiones | Ambas; autoridad por definir | Dimensiones solicitadas/aceptadas y actualización de configuración | Futuro; no implementado en V0.3 |
 | INPUT_EVENT | Entregar entrada al host | Android → Host | Posición, tipo de evento/herramienta, presión, tilt y botones disponibles | V0.5 / V0.6 |
 | PING | Comprobar continuidad de sesión | Ambas | Correlación y respuesta conceptual; tiempos por definir | V0.1 |
 | GOODBYE | Finalizar sesión ordenadamente | Ambas | Motivo de cierre y liberación de recursos | V0.1 |
@@ -20,8 +20,8 @@ y tilt. Solo se habilitarán capacidades soportadas y aceptadas por ambos extrem
 S Pen es una posibilidad de dispositivo, no un requisito de fabricante.
 
 HELLO no sustituye la preparación explícita del cliente. La conexión física no
-constituye consentimiento ni inicia la sesión. En V0.1-B la disponibilidad del endpoint tras Start representa preparación, sin
-mensaje READY. La negociación futura de capacidades y cambios sigue pendiente.
+constituye consentimiento ni inicia la sesión. En la revisión V0.3 el endpoint puede estar preparado con la app visible; solo
+HELLO enviado por Android tras Start inicia la sesión, sin mensaje READY. La negociación futura de capacidades y cambios sigue pendiente.
 
 ## Excepción experimental V0.1-A
 
@@ -30,7 +30,7 @@ parámetros fijos, mediante forwarding ADB de sockets Unix. No implementa los
 mensajes de esta propuesta ni control plane, negociación o serialización definitiva.
 El estado listo depende de la acción explícita Start receiver en Android.
 
-## Experimento implementado V0.1-B
+## Experimento implementado V0.1-B, inicio revisado en V0.3
 
 [Session PoC](SESSION_POC.md) añade control separado del vídeo sobre dos sockets
 Unix/localabstract mediante ADB/USB físico. Control usa JSON Lines UTF-8, una línea
@@ -38,15 +38,19 @@ por objeto, límite de 4096 bytes sin LF y wire version `protocol=1`.
 
 | Mensaje experimental | Dirección | Campos exactos |
 | --- | --- | --- |
-| HELLO | Host → Android | `type="hello"`, `protocol=1` |
-| HELLO_ACK | Android → Host | `type="hello_ack"`, `protocol=1` |
+| HELLO | Android → Host | `type="hello"`, `protocol=1` |
+| HELLO_ACK | Host → Android | `type="hello_ack"`, `protocol=1` |
 | VIDEO_CONFIG | Host → Android | `type="video_config"`, `codec="h264"`, `width`, `height`, `fps` enteros |
 | VIDEO_CONFIG_ACK | Android → Host | `type="video_config_ack"` |
 | GOODBYE | Host → Android | `type="goodbye"`, `reason` string diagnóstico |
 
-No empieza vídeo hasta ambos ACK. Parámetros válidos en el PoC: width 1..1920,
+V0.3 validó físicamente este inicio Android → Host. Antes de Start no se crea
+Meta-0 ni se inicia vídeo. VIRTUAL se abre únicamente después de VIDEO_CONFIG_ACK;
+la materialización de Meta-0 ocurre al negociar PipeWire. No empieza vídeo hasta ambos ACK. Parámetros válidos en el PoC: width 1..1920,
 height 1..1080, fps 1..60; no hay negociación de capabilities. Plazos de handshake
-5 s; inválidos/EOF/timeout cierran la sesión. GOODBYE es best effort, nunca requisito
+5 s una vez recibido el primer byte; la espera inicial de HELLO en el host
+es indefinida e interrumpible con Ctrl+C, sin GOODBYE antes de un HELLO válido.
+Inválidos/EOF/timeout cierran la sesión. GOODBYE es best effort, nunca requisito
 para cleanup. Annex B + AUD continúa exclusivamente en el video plane, sin
 VIDEO_FRAME ni encapsulación Darksplay por frame.
 

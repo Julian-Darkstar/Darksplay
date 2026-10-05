@@ -1,7 +1,7 @@
 """Darksplay V0.2 — xdg-desktop-portal ScreenCast client.
 
 Interacts with org.freedesktop.portal.ScreenCast over D-Bus to obtain a
-PipeWire file descriptor and stream node ID for an existing display monitor.
+PipeWire file descriptor and stream node ID for an existing display monitor or a virtual display.
 
 Lifecycle & Ownership:
   - Owns the D-Bus session and signal subscriptions for portal requests.
@@ -31,6 +31,10 @@ REQUEST_IFACE = "org.freedesktop.portal.Request"
 SESSION_IFACE = "org.freedesktop.portal.Session"
 
 
+MONITOR = 1
+VIRTUAL = 4
+
+
 class PortalError(RuntimeError):
     """Generic portal interaction error."""
     pass
@@ -51,7 +55,10 @@ class PortalScreenCast:
             ...
     """
 
-    def __init__(self, on_closed: Optional[Callable[[], None]] = None) -> None:
+    def __init__(self, on_closed: Optional[Callable[[], None]] = None, *, source_type: int = MONITOR) -> None:
+        if source_type not in (MONITOR, VIRTUAL):
+            raise ValueError("source_type must be MONITOR or VIRTUAL")
+        self.source_type = source_type
         dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
         self._bus = dbus.SessionBus()
         self._portal_obj = self._bus.get_object(PORTAL_BUS_NAME, PORTAL_OBJECT_PATH)
@@ -88,13 +95,17 @@ class PortalScreenCast:
 
             # 2. SelectSources (monitor, single, embedded cursor, no persist)
             self._select_sources(self.session_handle)
-            log.info("Portal SelectSources completed (MONITOR, embedded cursor)")
+            log.info("Portal SelectSources completed (source_type=%d, embedded cursor)", self.source_type)
 
             # 3. Start (pops up GNOME dialog for user consent)
             log.info("Awaiting user screen selection in GNOME dialog...")
             streams = self._start(self.session_handle)
             if not streams:
                 raise PortalError("ScreenCast Start returned no streams")
+
+            if self.source_type == VIRTUAL and (len(streams) != 1 or
+                    int(streams[0][1].get("source_type", -1)) != VIRTUAL):
+                raise PortalError("Expected exactly one VIRTUAL stream")
 
             # Extract first stream (node_id and properties)
             first_stream = streams[0]
@@ -114,7 +125,7 @@ class PortalScreenCast:
 
             return self
 
-        except Exception:
+        except BaseException:
             self.close()
             raise
 
@@ -175,7 +186,7 @@ class PortalScreenCast:
 
     def _select_sources(self, session_handle: str) -> None:
         opts: Dict[str, Any] = {
-            "types": dbus.UInt32(1),        # 1 = MONITOR
+            "types": dbus.UInt32(self.source_type), # MONITOR or VIRTUAL
             "multiple": False,             # single source
             "cursor_mode": dbus.UInt32(2), # 2 = EMBEDDED
             "persist_mode": dbus.UInt32(0),# 0 = DO NOT PERSIST

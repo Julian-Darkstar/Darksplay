@@ -6,7 +6,7 @@ internal data class VideoConfig(val codec: String, val width: Int, val height: I
 
 /** Small PoC state machine, independently testable without Android runtime. */
 internal class SessionProtocol {
-    enum class State { WAITING, CONNECTED, HELLO_OK, CONFIGURED, STREAMING, CLOSING, CLOSED }
+    enum class State { WAITING, CONNECTED, HELLO_SENT, HELLO_OK, CONFIGURED, STREAMING, CLOSING, CLOSED }
     var state = State.WAITING
         private set
     var config: VideoConfig? = null
@@ -15,6 +15,16 @@ internal class SessionProtocol {
     @Synchronized fun connected() {
         check(state == State.WAITING) { "Unexpected connection" }
         state = State.CONNECTED
+    }
+    private var startRequested = false
+    @Synchronized fun requestStart() {
+        check(state in setOf(State.WAITING, State.CONNECTED)) { "Unexpected Start" }
+        startRequested = true
+    }
+    @Synchronized fun hello(): Map<String, Any> {
+        check(startRequested && state == State.CONNECTED) { "HELLO requires Start and connection" }
+        state = State.HELLO_SENT
+        return mapOf("type" to "hello", "protocol" to 1)
     }
     private fun integer(message: Map<String, Any>, key: String, max: Int): Int {
         val value = message[key]
@@ -27,11 +37,11 @@ internal class SessionProtocol {
         val type = message["type"]
         require(type is String) { "Missing string type" }
         return when {
-            state == State.CONNECTED && type == "hello" -> {
-                require(message.keys == setOf("type", "protocol")) { "Unexpected HELLO fields" }
+            state == State.HELLO_SENT && type == "hello_ack" -> {
+                require(message.keys == setOf("type", "protocol")) { "Unexpected HELLO_ACK fields" }
                 require(integer(message, "protocol", 1) == 1) { "Incompatible protocol" }
                 state = State.HELLO_OK
-                mapOf("type" to "hello_ack", "protocol" to 1)
+                null
             }
             state == State.HELLO_OK && type == "video_config" -> {
                 require(message.keys == setOf("type", "codec", "width", "height", "fps")) { "Unexpected config fields" }
@@ -50,8 +60,16 @@ internal class SessionProtocol {
             else -> error("Unexpected $type in $state")
         }
     }
+    private var videoAcknowledged = false
+    @Synchronized fun startVideo(prepare: () -> Unit, acknowledge: () -> Unit, start: () -> Unit) {
+        check(state == State.CONFIGURED && !videoAcknowledged) { "Video before configuration or duplicate start" }
+        prepare()
+        acknowledge()
+        videoAcknowledged = true
+        start()
+    }
     @Synchronized fun streaming() {
-        check(state == State.CONFIGURED) { "Video before configuration" }
+        check(state == State.CONFIGURED && videoAcknowledged) { "Video before configuration ACK" }
         state = State.STREAMING
     }
     @Synchronized fun close() { state = State.CLOSED }

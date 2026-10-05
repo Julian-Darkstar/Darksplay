@@ -1,5 +1,10 @@
 # V0.2 PipeWire Capture
 
+Este documento conserva el alcance y la evidencia de V0.2 (MONITOR). V0.3 añade
+`--virtual-display` y escritorio extendido, ya validado en
+[VIRTUAL_POC.md](VIRTUAL_POC.md). El control compartido ahora empieza con HELLO
+enviado por Android tras Start; véase [PROTOCOL.md](PROTOCOL.md).
+
 V0.2 sustituye por defecto la fuente sintética `videotestsrc` por captura real
 de pantalla en Fedora/GNOME/Wayland. La captura usa
 `xdg-desktop-portal ScreenCast` para obtener consentimiento del usuario y un

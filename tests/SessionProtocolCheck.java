@@ -12,21 +12,38 @@ public class SessionProtocolCheck {
         try { action.run(); } catch (Exception expected) { return; }
         throw new AssertionError("Invalid input accepted");
     }
-    static Map<String,Object> hello(int version) { return Map.of("type","hello","protocol",version); }
+    static Map<String,Object> hello(int version) { return Map.of("type","hello_ack","protocol",version); }
     static Map<String,Object> config() {
         return Map.of("type","video_config","codec","h264","width",1280,"height",720,"fps",30);
     }
-    static SessionProtocol connected() { var p=new SessionProtocol(); p.connected(); return p; }
+    static SessionProtocol connected() { var p=new SessionProtocol(); p.requestStart(); p.connected(); check(p.hello().equals(Map.of("type","hello","protocol",1))); return p; }
     public static void main(String[] args) throws Exception {
+        var idle = new SessionProtocol(); idle.connected();
+        fails(() -> idle.hello());
+        fails(() -> idle.accept(hello(1)));
+        fails(() -> connected().accept(Map.of("type","hello","protocol",1)));
         var p=connected();
-        check(p.accept(hello(1)).equals(Map.of("type","hello_ack","protocol",1)));
+        check(p.accept(hello(1)) == null);
         check(p.accept(config()).equals(Map.of("type","video_config_ack")));
         check(p.getConfig().getWidth()==1280 && p.getConfig().getHeight()==720 && p.getConfig().getFps()==30);
         check(p.getConfig().getMime().equals("video/avc"));
         var alternative=connected(); alternative.accept(hello(1));
         alternative.accept(Map.of("type","video_config","codec","h264","width",640,"height",480,"fps",24));
         check(alternative.getConfig().getWidth()==640 && alternative.getConfig().getHeight()==480 && alternative.getConfig().getFps()==24);
+        fails(() -> p.streaming());
+        var order = new ArrayList<String>();
+        p.startVideo(() -> { order.add("prepare"); return kotlin.Unit.INSTANCE; },
+            () -> { order.add("ack"); return kotlin.Unit.INSTANCE; },
+            () -> { order.add("start"); return kotlin.Unit.INSTANCE; });
+        check(order.equals(List.of("prepare", "ack", "start")));
         p.streaming();
+        var broken = connected(); broken.accept(hello(1)); broken.accept(config());
+        var blocked = new ArrayList<String>();
+        fails(() -> broken.startVideo(() -> { blocked.add("prepare"); return kotlin.Unit.INSTANCE; },
+            () -> { throw new IllegalStateException("ACK write failed"); },
+            () -> { blocked.add("start"); return kotlin.Unit.INSTANCE; }));
+        check(blocked.equals(List.of("prepare")));
+        fails(() -> broken.streaming());
         fails(() -> p.accept(hello(1)));
         check(p.accept(Map.of("type","goodbye","reason","completed"))==null);
         fails(() -> p.accept(config()));

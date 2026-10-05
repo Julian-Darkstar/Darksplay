@@ -4,10 +4,9 @@
 
 Darksplay es un proyecto experimental que busca permitir utilizar un dispositivo
 Android como monitor extendido de una computadora. Actualmente incluye el
-bootstrap, la sesión experimental V0.1-B con control separado y V0.2: captura
-real de pantalla mediante xdg-desktop-portal ScreenCast y PipeWire sobre
-ADB/USB físico. El monitor virtual y el escritorio extendido siguen pendientes
-para V0.3.
+bootstrap, captura de un monitor existente (V0.2) y un monitor extendido virtual
+(V0.3), validados físicamente en Fedora/GNOME/Wayland con Android por ADB/USB.
+V0.3 usa ScreenCast VIRTUAL, PipeWire, GStreamer/OpenH264 y MediaCodec/SurfaceView.
 
 La primera plataforma host será Fedora Linux con GNOME y Wayland; el cliente
 inicial será Android. La separación del núcleo y los backends permitirá evaluar
@@ -24,6 +23,9 @@ Windows posteriormente, sin vincular el diseño a fabricantes o hardware de prue
 - V0.2 PipeWire Capture: captura real de un monitor mediante el portal ScreenCast
   de GNOME, con consentimiento explícito, validada físicamente; véase
   [PIPEWIRE_POC.md](docs/PIPEWIRE_POC.md).
+- V0.3: ScreenCast VIRTUAL (`source_type=4`) materializa Meta-0 tras negociar
+  PipeWire. Ventanas movidas al monitor extendido aparecen en Android; Stop
+  elimina Meta-0 y limpia la sesión. [Prueba física y límites](docs/VIRTUAL_POC.md).
 - Control V0.1-B: HELLO/ACK, VIDEO_CONFIG/ACK y GOODBYE mediante JSON Lines;
   véase [sesión experimental y validación](docs/SESSION_POC.md).
 - Arquitectura, propuesta conceptual de protocolo, privacidad y roadmap.
@@ -32,7 +34,6 @@ Windows posteriormente, sin vincular el diseño a fabricantes o hardware de prue
 ## Planned
 
 - Protocolo definitivo, capabilities y evaluación de latencia: V0.1 sigue siendo experimental.
-- Monitor virtual y escritorio extendido real: V0.3.
 - Aceleración de encoding y entrada touch/stylus: fases posteriores.
 - Backend Windows en una etapa futura.
 
@@ -47,8 +48,23 @@ GNOME, PipeWire o Windows forma parte del núcleo común.
 
 El runtime será local-first, sin cloud, cuentas, telemetría ni analytics. Una
 sesión USB no requerirá Internet. Conectar el cable no iniciará una sesión:
-el cliente deberá estar abierto y listo y el host deberá iniciar explícitamente
-la sesión. Las herramientas de desarrollo pueden usar Internet.
+Android envía HELLO únicamente tras Start. El host espera ese mensaje y abre
+VIRTUAL solo después de VIDEO_CONFIG_ACK. No existe mensaje READY. Las herramientas de desarrollo pueden usar Internet.
+
+## Monitor virtual V0.3
+
+Con el APK actualizado, abre Darksplay sin pulsar Start y ejecuta:
+
+```sh
+python3 -u tools/video-poc.py --virtual-display
+```
+
+Después pulsa Start y acepta el portal si muestra un diálogo. El endpoint de
+control debe estar preparado; no hay retries ni reconexión automática.
+MONITOR sigue siendo el modo predeterminado y `--videotestsrc` conserva la prueba sintética.
+La resolución validada es 1280×720: Meta-0 mostró modo de 60 Hz, mientras
+VIDEO_CONFIG y H.264 permanecen a 30 FPS nominales. Se observaron tirones;
+no se midió latencia ni se optimizó rendimiento.
 
 ## Compilar y validar el host mínimo
 
@@ -76,6 +92,7 @@ CCACHE_DIR="$PWD/build/.ccache" cmake --build build
 - [Vídeo PoC V0.1-A](docs/VIDEO_POC.md)
 - [Sesión PoC V0.1-B](docs/SESSION_POC.md)
 - [V0.2 PipeWire Capture](docs/PIPEWIRE_POC.md)
+- [V0.3 monitor virtual](docs/VIRTUAL_POC.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Protocolo conceptual](docs/PROTOCOL.md)
 - [Privacidad](docs/PRIVACY.md)

@@ -6,6 +6,7 @@ xdg-desktop-portal ScreenCast over PipeWire. Preserves V0.1-B session control
 and protocol (HELLO -> HELLO_ACK -> VIDEO_CONFIG -> VIDEO_CONFIG_ACK).
 """
 import argparse
+from contextlib import ExitStack
 import os
 from pathlib import Path
 import select
@@ -16,7 +17,7 @@ import tempfile
 import threading
 import time
 
-from screencast_portal import PortalCancelled, PortalError, PortalScreenCast
+from screencast_portal import PortalCancelled, PortalError, PortalScreenCast, VIRTUAL
 from session_control import Control, ProtocolError, TransportClosed
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -78,7 +79,7 @@ def pipeline_args_synthetic(fd, seconds=0):
 pipeline_args = pipeline_args_synthetic
 
 
-def pipeline_args_pipewire(video_fd, pw_fd, node_id, seconds=0, keepalive_ms=1000):
+def pipeline_args_pipewire(video_fd, pw_fd, node_id, seconds=0, keepalive_ms=1000, *, virtual_display=False):
     """PipeWire screen capture pipeline.
 
     Captures from pipewiresrc via portal FD and node ID, adjusts rate to 30 FPS,
@@ -95,6 +96,8 @@ def pipeline_args_pipewire(video_fd, pw_fd, node_id, seconds=0, keepalive_ms=100
     ]
     if seconds:
         pipeline.append(f"num-buffers={seconds * 30}")
+    if virtual_display:
+        pipeline += ["!", "video/x-raw,format=BGRx,width=1280,height=720"]
     pipeline += [
         "!", "videorate",
         "!", "video/x-raw,framerate=30/1",
@@ -136,9 +139,11 @@ def best_effort_goodbye(control, reason):
         print(f"GOODBYE unavailable: {error}", flush=True)
 
 
-def run_session(control, open_video, start_pipeline, source_revoked=None):
+def run_session(control, open_video, start_pipeline, source_revoked=None, prepare_source=None):
     """Injectable boundaries let tests prove no video/process starts without both ACKs."""
     def stream_video():
+        if prepare_source is not None:
+            prepare_source()  # Only called by begin_video after both ACKs.
         with open_video() as stream:
             process = None
             try:
@@ -198,13 +203,14 @@ def run_session(control, open_video, start_pipeline, source_revoked=None):
     try:
         return control.begin_video(stream_video)
     except BaseException:
-        best_effort_goodbye(control, "interrupted")
+        if control.state != "CONNECTED":
+            best_effort_goodbye(control, "interrupted")
         raise
     finally:
         control.close()
 
 
-def _run_forwarded_session(adb, serial, args, make_pipeline, source_revoked=None):
+def _run_forwarded_session(adb, serial, args, make_pipeline, source_revoked=None, prepare_source=None):
     directory = ROOT / "build" / "video-poc"
     directory.mkdir(parents=True, exist_ok=True)
     forwards = []
@@ -236,6 +242,7 @@ def _run_forwarded_session(adb, serial, args, make_pipeline, source_revoked=None
                 lambda: connect("video"),
                 make_pipeline,
                 source_revoked=source_revoked,
+                prepare_source=prepare_source,
             )
         finally:
             for local in reversed(forwards):
@@ -246,7 +253,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", help="authorized physical USB serial; otherwise require exactly one")
     parser.add_argument("--seconds", type=int, default=0, help="finite test duration; 0 runs until Ctrl-C")
-    parser.add_argument(
+    sources = parser.add_mutually_exclusive_group()
+    sources.add_argument("--virtual-display", action="store_true",
+                         help="create a 1280x720 virtual display after Android session ACKs")
+    sources.add_argument(
         "--videotestsrc",
         action="store_true",
         help="use synthetic videotestsrc instead of PipeWire capture (diagnostic/regression)",
@@ -291,17 +301,24 @@ def main():
         return _run_forwarded_session(adb, serial, args, start_synthetic)
 
     # V0.2: PipeWire capture via xdg-desktop-portal ScreenCast.
-    # Invariant: Screen selection consent occurs BEFORE Darksplay timeouts begin.
+    # MONITOR consent precedes handshake; VIRTUAL consent follows Android ACKs.
     print("Requesting screen capture via xdg-desktop-portal ScreenCast...", flush=True)
     source_revoked = threading.Event()
     try:
-        with PortalScreenCast(on_closed=source_revoked.set) as portal:
-            portal.start_dispatch()
-            print(
-                f"Screen capture authorized (node_id={portal.node_id}, fd={portal.pipewire_fd})",
-                flush=True,
-            )
+        with ExitStack() as sources:
+            portal = None
 
+            def open_source():
+                nonlocal portal
+                options = {"source_type": VIRTUAL} if args.virtual_display else {}
+                portal = sources.enter_context(PortalScreenCast(
+                    on_closed=source_revoked.set, **options))
+                portal.start_dispatch()
+                print(f"Capture source ready: node_id={portal.node_id}, fd={portal.pipewire_fd}", flush=True)
+
+            # MONITOR keeps consent before handshake; VIRTUAL requires both ACKs.
+            if not args.virtual_display:
+                open_source()
             def start_pipewire(stream):
                 pipeline = pipeline_args_pipewire(
                     stream.fileno(),
@@ -309,6 +326,7 @@ def main():
                     portal.node_id,
                     args.seconds,
                     args.keepalive_ms,
+                    virtual_display=args.virtual_display,
                 )
                 print("Pipeline: " + " ".join(pipeline), flush=True)
                 return subprocess.Popen(
@@ -320,9 +338,11 @@ def main():
                 return _run_forwarded_session(
                     adb, serial, args, start_pipewire,
                     source_revoked=source_revoked,
+                    prepare_source=open_source if args.virtual_display else None,
                 )
             finally:
-                portal.stop_dispatch()
+                if portal is not None:
+                    portal.stop_dispatch()
 
     except PortalCancelled:
         print("Screen selection cancelled by user in GNOME dialog; exiting cleanly", flush=True)

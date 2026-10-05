@@ -38,15 +38,17 @@ class Control:
         self.stream.sendall(data + b"\n")
         print("control TX " + data.decode(), flush=True)
 
-    def read(self):
+    def read(self, wait_initial=False):
         line = bytearray()
         deadline = time.monotonic() + self.timeout
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("control message/ACK timeout")
-            self.stream.settimeout(remaining)
+            self.stream.settimeout(None if wait_initial and not line else remaining)
             byte = self.stream.recv(1)
+            if wait_initial and not line:
+                deadline = time.monotonic() + self.timeout
             if not byte:
                 raise TransportClosed("control EOF" + (" inside line" if line else ""))
             if byte == b"\n":
@@ -67,11 +69,12 @@ class Control:
     def handshake(self):
         if self.state != "CONNECTED":
             raise ProtocolError("HELLO in unexpected state")
-        self.send({"type": "hello", "protocol": 1})
-        ack = self.read()
-        if ack != {"type": "hello_ack", "protocol": 1} or type(ack.get("protocol")) is not int:
-            raise ProtocolError("expected HELLO_ACK protocol 1")
+        print("Waiting for Android HELLO / Start", flush=True)
+        hello = self.read(wait_initial=True)
+        if hello != {"type": "hello", "protocol": 1} or type(hello.get("protocol")) is not int:
+            raise ProtocolError("expected HELLO protocol 1")
         self.state = "HELLO_OK"
+        self.send({"type": "hello_ack", "protocol": 1})
         self.send(VIDEO_CONFIG)
         if self.read() != {"type": "video_config_ack"}:
             raise ProtocolError("expected VIDEO_CONFIG_ACK")

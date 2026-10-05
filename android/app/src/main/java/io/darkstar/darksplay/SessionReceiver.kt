@@ -6,6 +6,7 @@ import android.system.Os
 import android.system.OsConstants
 import android.system.StructPollfd
 import java.io.InputStream
+import java.io.EOFException
 import java.net.SocketTimeoutException
 import android.util.Log
 import android.view.Surface
@@ -13,6 +14,7 @@ import org.json.JSONObject
 
 /** Owns exactly one control connection and its newly created video receiver. */
 internal class SessionReceiver(private val surface: Surface, private val report: (String) -> Unit,
+    private val prepared: () -> Unit,
     private val finished: () -> Unit) {
     private val lock = Any()
     @Volatile private var stopping = false
@@ -21,10 +23,19 @@ internal class SessionReceiver(private val surface: Surface, private val report:
     private var video: VideoReceiver? = null
     private val protocol = SessionProtocol()
 
-    fun start() { Thread({ runSession() }, "DarksplayControl").start() }
+    private val startGate = StartGate()
+    fun prepare() { Thread({ runSession() }, "DarksplayControl").start() }
+    fun start() = synchronized(lock) {
+        // Peer loss can race a queued UI action. Never start a closing receiver.
+        if (!stopping) {
+            protocol.requestStart()
+            startGate.release()
+        }
+    }
     fun stop() {
-        stopping = true
         synchronized(lock) {
+            stopping = true
+            startGate.release()
             video?.stop()
             runCatching { control?.shutdownInput() }
             runCatching { control?.close() }
@@ -39,8 +50,9 @@ internal class SessionReceiver(private val surface: Surface, private val report:
                 if (stopping) return
                 listener = LocalServerSocket(CONTROL_NAME)
             }
-            report("Waiting for host")
+            report("Control prepared / Press Start")
             Log.i(TAG, "state=WAITING; control endpoint prepared; video endpoint absent")
+            prepared()
             val accepted = listener!!.accept()
             synchronized(lock) {
                 if (stopping) { accepted.close(); return }
@@ -50,7 +62,27 @@ internal class SessionReceiver(private val surface: Surface, private val report:
             }
             accepted.soTimeout = 0
             protocol.connected()
-            report("Host connected / Negotiating")
+            report("Host connected / Press Start")
+            startGate.awaitStart {
+                val poll = StructPollfd().apply {
+                    fd = accepted.fileDescriptor
+                    events = OsConstants.POLLIN.toShort()
+                }
+                Os.poll(arrayOf(poll), 0)
+                val events = poll.revents.toInt()
+                if (events and (OsConstants.POLLHUP or OsConstants.POLLERR or OsConstants.POLLNVAL) != 0)
+                    throw EOFException("Control closed before Start")
+                if (events and OsConstants.POLLIN != 0) {
+                    // Sole reader: after POLLIN, peek cannot lose data to another reader.
+                    // Distinguish half-close/EOF without consuming protocol bytes.
+                    val count = Os.recvfrom(accepted.fileDescriptor, ByteArray(1), 0, 1,
+                        OsConstants.MSG_PEEK, null)
+                    if (count == 0) throw EOFException("Control EOF before Start")
+                    error("Unexpected control data before Start")
+                }
+            }
+            if (stopping) return
+            report("Negotiating")
             Log.i(TAG, "state=${protocol.state}")
             val input = object : InputStream() {
                 override fun read(): Int {
@@ -75,7 +107,8 @@ internal class SessionReceiver(private val surface: Surface, private val report:
                 output.flush()
                 Log.i(TAG, "control TX $message; state=${protocol.state}")
             }
-            send(protocol.accept(receive()) ?: error("Missing HELLO_ACK"))
+            send(protocol.hello())
+            protocol.accept(receive()) // Must be HELLO_ACK before VIDEO_CONFIG.
             val ack = protocol.accept(receive()) ?: error("Missing VIDEO_CONFIG_ACK")
             val config = protocol.config ?: error("No video configuration")
             val receiver = VideoReceiver(surface, config,
@@ -88,10 +121,8 @@ internal class SessionReceiver(private val surface: Surface, private val report:
             synchronized(lock) {
                 if (stopping) return
                 video = receiver
-                receiver.prepare()
                 report("Configured: ${config.codec} / ${config.width}×${config.height} / ${config.fps} FPS")
-                send(ack)
-                receiver.start() // accept/decode only after successful ACK write
+                protocol.startVideo({ receiver.prepare() }, { send(ack) }, { receiver.start() })
             }
             val goodbye = receive { !stopping && receiver.isAlive() }
             protocol.accept(goodbye) // only GOODBYE is legal here

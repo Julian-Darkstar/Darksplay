@@ -1,11 +1,14 @@
-# Android de Darksplay — PoC V0.1-B
+# Android de Darksplay — sesión experimental V0.3
 
 Aplicación Kotlin mínima con nombre Darksplay, package `io.darkstar.darksplay`,
 una Activity nativa con logo, Start/Stop receiver y SurfaceView. Un receiver
 experimental utiliza LocalServerSocket, un parser Annex B y MediaCodec `video/avc`
 con configuración recibida mediante VIDEO_CONFIG (PoC host: 1280×720/30 FPS).
-Start prepara control; HELLO/ACK y VIDEO_CONFIG/ACK preceden al vídeo ADB/USB.
-No implementa protocolo final, servicios, sockets IP, captura, escritorio extendido,
+Con la app visible y Surface disponible se prepara únicamente el control técnico.
+Start autoriza HELLO Android → Host; HELLO_ACK y VIDEO_CONFIG llegan del host.
+Android prepara vídeo y responde VIDEO_CONFIG_ACK antes de recibir H.264.
+El host V0.3 ya transmite un monitor extendido real; Android solo decodifica y
+renderiza. No implementa protocolo final, servicios, sockets IP, captura local,
 entrada remota, telemetría ni analytics. No declara permisos especiales ni Internet.
 
 [Sesión V0.1-B](../docs/SESSION_POC.md) y [evidencia histórica V0.1-A](../docs/VIDEO_POC.md).
@@ -86,7 +89,8 @@ adb -s SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Sustituir SERIAL por el identificador mostrado por ADB. Instalar no inicia una
-sesión Darksplay: el receiver solo se prepara al pulsar Start receiver. No se modifican opciones del
+sesión Darksplay: el transporte de control puede prepararse con la app visible, pero solo Start
+autoriza HELLO y la sesión. No se modifican opciones del
 dispositivo ni se habilita ADB inalámbrico.
 
 ## Logo
@@ -140,3 +144,12 @@ Sesión física normal de 10 s/300 frames, GOODBYE y cleanup; Stop, datos invál
 y desconexión USB dejan la app utilizable. Detalles y prueba de reconexión en
 [SESSION_POC.md](../docs/SESSION_POC.md), con las pruebas no realizadas explícitas.
 No se midió latencia extremo a extremo ni se implementó captura/monitor virtual.
+
+## Validación integrada V0.3
+
+El APK con HELLO iniciado por Android fue instalado y probado mediante USB físico.
+Meta-0 1280×720 permitió mover ventanas del escritorio GNOME hacia Android.
+MediaCodec renderizó vídeo y Stop mostró `Stream finished`, liberó decoder/canales
+y el host eliminó Meta-0 y sus forwards. Se observaron tirones; no se midió
+latencia ni se optimizó rendimiento. [Evidencia completa](../docs/VIRTUAL_POC.md).
+Las validaciones V0.1 anteriores son históricas y usaban el handshake anterior.

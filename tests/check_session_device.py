@@ -29,7 +29,7 @@ def main():
         x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
         command('shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2))
         if name == 'start_receiver':
-            assert any(n.get('text') == 'Waiting for host' for n in ui().iter('node')), 'receiver not ready'
+            assert next(n for n in ui().iter('node') if n.get('resource-id', '').endswith('/stop_receiver')).get('enabled') == 'true', 'receiver not armed'
     def stopped():
         nodes = list(ui().iter('node'))
         assert next(n for n in nodes if n.get('resource-id', '').endswith('/start_receiver')).get('enabled') == 'true'
@@ -45,13 +45,13 @@ def main():
             button('stop_receiver')
             print('B stop waiting:', stopped(), flush=True)
             cases = [
-                ('wrong protocol', b'{"type":"hello","protocol":2}\n', False),
+                ('wrong protocol', b'{"type":"hello_ack","protocol":2}\n', False),
                 ('invalid JSON', b'{bad}\n', False),
                 ('missing type', b'{"protocol":1}\n', False),
                 ('config before hello', b'{"type":"video_config"}\n', False),
                 ('unexpected message', b'{"type":"ping"}\n', False),
                 ('oversize', b'x' * 4097, False),
-                ('duplicate key', b'{"type":"hello","protocol":1,"protocol":1}\n', False),
+                ('duplicate key', b'{"type":"hello_ack","protocol":1,"protocol":1}\n', False),
                 ('invalid UTF8', b'\xff\n', False),
                 ('partial EOF', b'{"type":', False),
                 ('handshake timeout', None, False),
@@ -66,10 +66,15 @@ def main():
                 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
                     stream.settimeout(8)
                     stream.connect(local.removeprefix('localfilesystem:'))
+                    hello = bytearray()
+                    while not hello.endswith(b'\n'):
+                        byte = stream.recv(1)
+                        assert byte, 'EOF before Android HELLO'
+                        hello += byte
+                        assert len(hello) <= 4097
+                    assert json.loads(hello) == {'type':'hello','protocol':1}, hello
                     if hello_first:
-                        stream.sendall(b'{"type":"hello","protocol":1}\n')
-                        ack = stream.recv(4096)
-                        assert json.loads(ack) == {'type':'hello_ack','protocol':1}, ack
+                        stream.sendall(b'{"type":"hello_ack","protocol":1}\n')
                     if payload == 'stop':
                         button('stop_receiver')
                     elif isinstance(payload, dict):
